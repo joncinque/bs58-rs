@@ -354,7 +354,7 @@ impl<'a, I: AsRef<[u8]>> DecodeBuilder<'a, I> {
 impl<'a, 'b> DecodeBuilder<'a, &'b [u8]> {
     /// Decode into a new array.
     ///
-    /// Returns the decoded array as bytes.
+    /// Returns the decoded array as bytes and the length written to the array.
     ///
     /// See the documentation for [`bs58::decode`](crate::decode())
     /// for an explanation of the errors that may occur.
@@ -363,13 +363,14 @@ impl<'a, 'b> DecodeBuilder<'a, &'b [u8]> {
     ///
     /// ```rust
     /// const _: () = {
-    ///     let Ok(output) = bs58::decode(b"EUYUqQf".as_slice()).into_array_const::<5>() else {
+    ///     let Ok((output, length)) = bs58::decode(b"EUYUqQf".as_slice()).into_array_with_length_const::<5>() else {
     ///         panic!()
     ///     };
     ///     assert!(matches!(&output, b"world"));
+    ///     assert!(matches!(length, 5));
     /// };
     /// ```
-    pub const fn into_array_const<const N: usize>(self) -> Result<[u8; N]> {
+    pub const fn into_array_with_length_const<const N: usize>(self) -> Result<([u8; N], usize)> {
         assert!(
             matches!(self.check, Check::Disabled),
             "checksums in const aren't supported (why are you using this API at runtime)",
@@ -377,9 +378,10 @@ impl<'a, 'b> DecodeBuilder<'a, &'b [u8]> {
         decode_into_const(self.input, self.alpha)
     }
 
-    /// [`Self::into_array_const`] but the result will be unwrapped, turning any error into a panic
-    /// message via [`Error::unwrap_const`], as a simple `into_array_const().unwrap()` isn't
-    /// possible yet.
+    /// [`Self::into_array_with_length_const`] but the result will be unwrapped, turning any error into a panic
+    /// message via [`Error::unwrap_const`], as a simple `into_array_with_length_const().unwrap()` isn't
+    /// possible yet. After the unwrap, only the resulting array will be returned, dropping
+    /// the output length.
     ///
     /// # Examples
     ///
@@ -401,7 +403,35 @@ impl<'a, 'b> DecodeBuilder<'a, &'b [u8]> {
     /// };
     /// ```
     pub const fn into_array_const_unwrap<const N: usize>(self) -> [u8; N] {
-        match self.into_array_const() {
+        self.into_array_with_length_const_unwrap().0
+    }
+
+    /// [`Self::into_array_with_length_const`] but the result will be unwrapped, turning any error into a panic
+    /// message via [`Error::unwrap_const`], as a simple `into_array_with_length_const().unwrap()` isn't
+    /// possible yet.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// const _: () = {
+    ///     let (output, length) = bs58::decode(b"EUYUqQf".as_slice()).into_array_with_length_const_unwrap::<5>();
+    ///     assert!(matches!(&output, b"world"));
+    ///     assert!(matches!(length, 5));
+    /// };
+    /// ```
+    ///
+    /// ```rust
+    /// const _: () = {
+    ///     assert!(matches!(
+    ///         bs58::decode(b"he11owor1d".as_slice())
+    ///             .with_alphabet(bs58::Alphabet::RIPPLE)
+    ///             .into_array_with_length_const_unwrap(),
+    ///         ([0x60, 0x65, 0xe7, 0x9b, 0xba, 0x2f, 0x78], 7),
+    ///     ));
+    /// };
+    /// ```
+    pub const fn into_array_with_length_const_unwrap<const N: usize>(self) -> ([u8; N], usize) {
+        match self.into_array_with_length_const() {
             Ok(result) => result,
             Err(err) => err.unwrap_const(),
         }
@@ -540,7 +570,10 @@ fn decode_cb58_into(
     }
 }
 
-const fn decode_into_const<const N: usize>(input: &[u8], alpha: &Alphabet) -> Result<[u8; N]> {
+const fn decode_into_const<const N: usize>(
+    input: &[u8],
+    alpha: &Alphabet,
+) -> Result<([u8; N], usize)> {
     let mut output = [0u8; N];
     let mut index = 0;
     let zero = alpha.encode[0];
@@ -600,7 +633,7 @@ const fn decode_into_const<const N: usize>(input: &[u8], alpha: &Alphabet) -> Re
         i += 1;
     }
 
-    Ok(output)
+    Ok((output, index))
 }
 
 #[cfg(feature = "std")]

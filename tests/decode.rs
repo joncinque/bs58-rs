@@ -81,6 +81,12 @@ fn test_decode_const_small_buffer_panic() {
 }
 
 #[test]
+fn test_decode_const_large_buffer() {
+    let (_, length) = bs58::decode(&b"a3gV"[..]).into_array_with_length_const_unwrap::<4>();
+    assert_eq!(length, 3);
+}
+
+#[test]
 #[should_panic]
 fn test_decode_const_invalid_char_panic() {
     let sample = "123456789abcd!efghij";
